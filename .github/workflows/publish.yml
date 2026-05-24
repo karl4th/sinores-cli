@@ -1,12 +1,66 @@
-name: Publish to npm
+name: CI & Publish
 
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  check-version:
+    runs-on: ubuntu-latest
+    outputs:
+      should_publish: ${{ steps.compare.outputs.should_publish }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Compare versions
+        id: compare
+        run: |
+          PACKAGE_NAME=$(node -p "require('./package.json').name")
+          LOCAL_VERSION=$(node -p "require('./package.json').version")
+          NPM_VERSION=$(npm view "$PACKAGE_NAME" version 2>/dev/null || echo "0.0.0")
+
+          echo "Package: $PACKAGE_NAME"
+          echo "Local: $LOCAL_VERSION"
+          echo "NPM: $NPM_VERSION"
+
+          if [ "$LOCAL_VERSION" = "$NPM_VERSION" ]; then
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+            echo "Version $LOCAL_VERSION already published."
+          else
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+            echo "New version $LOCAL_VERSION ready to publish."
+          fi
+
   publish:
     runs-on: ubuntu-latest
+    needs: [test, check-version]
+    if: needs.check-version.outputs.should_publish == 'true' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
 
@@ -16,16 +70,15 @@ jobs:
           node-version: 20
           registry-url: https://registry.npmjs.org
 
-      - name: Check npm auth
+      - name: Check auth token
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo "NPM_TOKEN secret is not set. Skipping publish."
-            echo "Go to Settings > Secrets and variables > Actions and add NPM_TOKEN."
-            exit 0
+            echo "NPM_TOKEN secret is not set. Aborting."
+            exit 1
           fi
-          npm whoami || { echo "Invalid NPM_TOKEN"; exit 0; }
+          npm whoami
 
       - name: Install dependencies
         run: npm ci
@@ -33,31 +86,9 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Check version and publish
+      - name: Publish to npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          if [ -z "$NODE_AUTH_TOKEN" ]; then
-            echo "NPM_TOKEN not set. Aborting."
-            exit 0
-          fi
-
-          PACKAGE_NAME=$(node -p "require('./package.json').name")
-          LOCAL_VERSION=$(node -p "require('./package.json').version")
-
-          echo "Package: $PACKAGE_NAME"
-          echo "Local version: $LOCAL_VERSION"
-
-          NPM_VERSION=$(npm view "$PACKAGE_NAME" version 2>/dev/null || echo "0.0.0")
-          echo "NPM version: $NPM_VERSION"
-
-          if [ "$LOCAL_VERSION" = "$NPM_VERSION" ]; then
-            echo "Version $LOCAL_VERSION already published. Skipping."
-            exit 0
-          fi
-
-          echo "Fixing package.json ..."
           npm pkg fix
-
-          echo "Publishing $PACKAGE_NAME@$LOCAL_VERSION ..."
           npm publish --access public
