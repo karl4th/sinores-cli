@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, memo } from 'react';
-import { Box, Text, useInput, useStdout, useStdin } from 'ink';
+import { Box, Text, useInput, useStdout } from 'ink';
 import TextInput from 'ink-text-input';
 import { readdir } from 'fs/promises';
 import path from 'path';
@@ -17,7 +17,6 @@ const COMMANDS: Array<{ name: string; desc: string }> = [
   { name: '/goal', desc: 'Set a goal and execute step by step' },
   { name: '/compact', desc: 'Compact conversation history to save context space' },
   { name: '/init', desc: 'Scan project and create .sinores/SINORES.md' },
-  { name: '/model', desc: 'Switch AI model' },
   { name: '/mode', desc: 'Switch mode (chat, agent, code, research)' },
   { name: '/export', desc: 'Save session to Markdown file' },
   { name: '/resume', desc: 'Restore previous session from disk' },
@@ -27,7 +26,7 @@ const COMMANDS: Array<{ name: string; desc: string }> = [
 
 const HINTS = [
   '↑↓ history   Tab autocomplete   Ctrl+C exit   @file context',
-  '/help  /goal  /compact  /init  /model  /export  /resume  /new  /clear',
+  '/help  /goal  /compact  /init  /export  /resume  /new  /clear',
   '/init generates project context   /export saves session   /resume restores',
 ];
 

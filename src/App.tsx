@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef, memo } from 'react';
-import { Box, Text, useApp, useInput } from 'ink';
+import { Box, useApp, useInput } from 'ink';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import { Splash } from './components/Splash.js';
@@ -105,7 +105,6 @@ export function App({ resume = false }: AppProps) {
           '  /goal    — set a goal, plan it, then execute step by step\n' +
           '  /compact — compact conversation history to save context space\n' +
           '  /init    — scan project and create .sinores/SINORES.md\n' +
-          '  /model   — switch AI model (e.g. /model gpt-4o)\n' +
           '  /mode    — switch mode (e.g. /mode agent)\n' +
           '  /export  — save session to Markdown file\n' +
           '  /resume  — restore previous session from disk\n' +

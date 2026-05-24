@@ -56,13 +56,13 @@ cp .env.example .env
 Set the API key:
 
 ```env
-API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+MOONSHOT_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 Environment variables are also supported:
 
 ```bash
-export API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+export MOONSHOT_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
 ## Usage

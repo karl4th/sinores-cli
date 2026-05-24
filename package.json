@@ -3,6 +3,7 @@
   "version": "0.1.2",
   "description": "",
   "type": "module",
+  "files": ["dist"],
   "main": "dist/index.js",
   "bin": {
     "sinores-cli": "dist/index.js",
