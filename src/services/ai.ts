@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
 import 'dotenv/config';
 import { TOOL_DEFINITIONS, executeTool, permissionKey, type ToolName } from './tools.js';
-import { SYSTEM_PROMPT } from './prompt.js';
+import { SYSTEM_PROMPT, COMPACT_SUMMARY_PROMPT } from './prompt.js';
 
 const client = new OpenAI({
   apiKey:   process.env.MOONSHOT_API_KEY ?? 'missing',
@@ -214,6 +214,60 @@ export async function generatePlan(
     if (delta.reasoning_content) callbacks.onThinkingChunk(delta.reasoning_content);
     if (delta.content)           callbacks.onContentChunk(delta.content);
   }
+}
+
+export async function compactMessages(history: ChatMsg[]): Promise<string> {
+  if (!process.env.MOONSHOT_API_KEY) {
+    throw new Error('MOONSHOT_API_KEY not set — create a .env file with your Moonshot API key');
+  }
+
+  const lines: string[] = [];
+  for (const msg of history) {
+    if (msg.role === 'system') continue;
+
+    if (msg.role === 'tool') {
+      lines.push(`Result (${msg.tool_call_id}):\n${msg.content}`);
+      continue;
+    }
+
+    if (msg.role === 'assistant') {
+      const anyMsg = msg as any;
+      if (anyMsg.tool_calls?.length) {
+        for (const tc of anyMsg.tool_calls) {
+          lines.push(`Tool: ${tc.function.name}(${tc.function.arguments})`);
+        }
+      }
+      if (anyMsg.reasoning_content) {
+        lines.push(`Thinking: ${anyMsg.reasoning_content}`);
+      }
+      if (msg.content && msg.content !== '(no response)') {
+        lines.push(`Assistant: ${msg.content}`);
+      }
+      continue;
+    }
+
+    lines.push(`User: ${msg.content}`);
+  }
+
+  const transcript = lines.join('\n\n');
+
+  const response = await client.chat.completions.create({
+    model: 'kimi-k2.6',
+    messages: [
+      { role: 'system', content: COMPACT_SUMMARY_PROMPT },
+      { role: 'user', content: transcript },
+    ],
+    temperature: 1,
+    max_tokens: 16384,
+    top_p: 0.95,
+    stream: false,
+  } as any) as any;
+
+  const content = response.choices?.[0]?.message?.content ?? '';
+  if (!content) {
+    throw new Error('Compact summary returned empty content');
+  }
+  return content;
 }
 
 export async function runAgent(

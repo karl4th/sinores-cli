@@ -20,6 +20,8 @@ import { useGoal } from './hooks/useGoal.js';
 import { executeTool } from './services/tools.js';
 import { countTokens } from './services/tokenizer.js';
 import { CWD } from './services/tools.js';
+import { compactMessages } from './services/ai.js';
+import { SYSTEM_PROMPT } from './services/prompt.js';
 
 const ts = () => new Date().toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' });
 const MemoWelcomeBanner = memo(WelcomeBanner);
@@ -38,6 +40,7 @@ export function App({ resume = false }: AppProps) {
   const [hasChat, setHasChat] = useState(false);
   const [exitPending, setExitPending] = useState(false);
   const [inputSeed, setInputSeed] = useState('');
+  const [isCompacting, setIsCompacting] = useState(false);
   const clearPendingRef = React.useRef(false);
 
   // Keep latest messages/tokens in refs for use inside async callbacks
@@ -100,6 +103,7 @@ export function App({ resume = false }: AppProps) {
           'Commands:\n' +
           '  /help    — show this message\n' +
           '  /goal    — set a goal, plan it, then execute step by step\n' +
+          '  /compact — compact conversation history to save context space\n' +
           '  /init    — scan project and create .sinores/SINORES.md\n' +
           '  /model   — switch AI model (e.g. /model gpt-4o)\n' +
           '  /mode    — switch mode (e.g. /mode agent)\n' +
@@ -152,6 +156,33 @@ export function App({ resume = false }: AppProps) {
       try { context = await executeTool('read_file', { path: '.sinores/SINORES.md' }); } catch { /* no context */ }
 
       await goal.startGoal(task, context);
+      return;
+    }
+
+    if (raw === '/compact') {
+      const nonSystemCount = agent.fullHistory.current.length;
+      if (nonSystemCount < 3) {
+        addSystem('Not enough history to compact.');
+        return;
+      }
+      setIsCompacting(true);
+      try {
+        const summary = await compactMessages(agent.fullHistory.current);
+        agent.fullHistory.current = [{ role: 'user', content: summary }];
+        const newMessages = [
+          { role: 'system', content: 'Context compacted.', timestamp: ts() },
+          { role: 'user', content: summary, timestamp: ts() },
+        ] as Message[];
+        setMessages(newMessages);
+        const newTokens = countTokens(SYSTEM_PROMPT) + countTokens(summary);
+        setTokens(newTokens);
+        await session.saveCurrentSession(newMessages, agent.fullHistory.current, newTokens);
+        addSystem('Context compacted successfully.');
+      } catch (err) {
+        addSystem(`Compaction failed: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        setIsCompacting(false);
+      }
       return;
     }
 
@@ -357,6 +388,16 @@ export function App({ resume = false }: AppProps) {
         <MessageBubble key={i} message={msg} />
       ))}
 
+      {isCompacting && (
+        <Box flexDirection="column">
+          <ThinkingIndicator
+            liveContent=""
+            liveThinkingText="Compacting context…"
+            liveThinkingChars={0}
+          />
+        </Box>
+      )}
+
       {agent.isLoading && (
         <Box flexDirection="column">
           <ThinkingIndicator
@@ -398,7 +439,7 @@ export function App({ resume = false }: AppProps) {
         <>
           <InputArea
             onSubmit={handleSubmit}
-            isLoading={agent.isLoading}
+            isLoading={agent.isLoading || isCompacting}
             exitPending={exitPending}
             initialValue={inputSeed}
           />

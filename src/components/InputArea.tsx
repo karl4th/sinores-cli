@@ -12,18 +12,29 @@ interface InputAreaProps {
   initialValue?: string;
 }
 
-const COMMANDS = ['/help', '/goal', '/init', '/model', '/mode', '/export', '/resume', '/new', '/clear'];
+const COMMANDS: Array<{ name: string; desc: string }> = [
+  { name: '/help', desc: 'Show available commands' },
+  { name: '/goal', desc: 'Set a goal and execute step by step' },
+  { name: '/compact', desc: 'Compact conversation history to save context space' },
+  { name: '/init', desc: 'Scan project and create .sinores/SINORES.md' },
+  { name: '/model', desc: 'Switch AI model' },
+  { name: '/mode', desc: 'Switch mode (chat, agent, code, research)' },
+  { name: '/export', desc: 'Save session to Markdown file' },
+  { name: '/resume', desc: 'Restore previous session from disk' },
+  { name: '/new', desc: 'Start a new session' },
+  { name: '/clear', desc: 'Reset conversation (requires confirmation)' },
+];
 
 const HINTS = [
   '↑↓ history   Tab autocomplete   Ctrl+C exit   @file context',
-  '/help  /init  /model  /export  /resume  /new  /clear',
+  '/help  /goal  /compact  /init  /model  /export  /resume  /new  /clear',
   '/init generates project context   /export saves session   /resume restores',
 ];
 
-function matchingCommands(value: string): string[] {
+function matchingCommands(value: string): Array<{ name: string; desc: string }> {
   if (!value) return COMMANDS;
   if (!value.startsWith('/')) return [];
-  return COMMANDS.filter(c => c.startsWith(value) && c !== value);
+  return COMMANDS.filter(c => c.name.startsWith(value) && c.name !== value);
 }
 
 async function scanFiles(dir: string, depth = 0, maxDepth = 2): Promise<string[]> {
@@ -137,7 +148,7 @@ export const InputArea = memo(function InputArea({ onSubmit, isLoading = false, 
       if (!value || cmdHints.length === 0) {
         setHintIdx(h => (h + 1) % HINTS.length);
       } else if (cmdHints.length > 0) {
-        insertValue(cmdHints[0]!);
+        insertValue(cmdHints[0]!.name);
       } else {
         setHintIdx(h => (h + 1) % HINTS.length);
       }
@@ -204,11 +215,11 @@ export const InputArea = memo(function InputArea({ onSubmit, isLoading = false, 
       )}
 
       {cmdHints.length > 0 && !filePickerOpen && (
-        <Box paddingLeft={3} paddingBottom={0} gap={2}>
+        <Box paddingLeft={3} paddingBottom={0} flexDirection="column">
           <Text color="#6B7280">commands:</Text>
           {cmdHints.map((cmd, i) => (
-            <Text key={cmd} color={i === 0 ? '#C4B5FD' : '#6B7280'} bold={i === 0}>
-              {i === 0 ? `${cmd} ↵` : cmd}
+            <Text key={cmd.name} color={i === 0 ? '#C4B5FD' : '#6B7280'} bold={i === 0}>
+              {i === 0 ? '▸ ' : '  '}{cmd.name} <Text color="#6B7280">— {cmd.desc}</Text>
             </Text>
           ))}
         </Box>
