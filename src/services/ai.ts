@@ -8,7 +8,7 @@ const client = new OpenAI({
   baseURL:  'https://api.moonshot.ai/v1',
 });
 
-const MAX_ROUNDS = 20;
+const MAX_ROUNDS = 50;
 
 export type Permission = 'once' | 'session' | 'cancel';
 
@@ -27,6 +27,7 @@ export interface AgentCallbacks {
   onToolCallDone:    (id: string, result: string, status: 'done' | 'cancelled' | 'error') => void;
   onDone:            (thinkingChars: number, updatedHistory: ChatMsg[]) => void;
   onError:           (err: Error) => void;
+  onRoundLimit?:     (history: ChatMsg[]) => Promise<boolean>;
   requestPermission: (name: ToolName, args: Record<string, string>) => Promise<Permission>;
 }
 
@@ -125,7 +126,8 @@ function truncateHistory(history: ChatMsg[], maxMessages = 60): ChatMsg[] {
       return history.slice(i);
     }
   }
-  return history;
+  // No user boundary found — hard-slice to keep the most recent messages
+  return history.slice(history.length - maxMessages);
 }
 
 export async function runAgent(
@@ -155,7 +157,14 @@ export async function runAgent(
 
       // #12 fix: hard cap on tool-call rounds
       if (++rounds > MAX_ROUNDS) {
-        callbacks.onError(new Error(`Agent reached ${MAX_ROUNDS} rounds — stopped to prevent runaway.`));
+        if (callbacks.onRoundLimit) {
+          const shouldContinue = await callbacks.onRoundLimit(messages.slice(1));
+          if (shouldContinue) {
+            rounds = 0;
+            continue;
+          }
+        }
+        callbacks.onDone(totalThinkingChars, messages.slice(1));
         return;
       }
 
@@ -167,10 +176,12 @@ export async function runAgent(
         onContentChunk: callbacks.onContentChunk,
       });
 
+      if (signal.aborted) return;
+
       // Push assistant turn
       const assistantMsg: Record<string, unknown> = {
         role:    'assistant',
-        content: round.content || null,
+        content: round.content || '(no response)',
       };
       if (round.thinkingText) {
         // Kimi requires reasoning_content alongside tool_calls

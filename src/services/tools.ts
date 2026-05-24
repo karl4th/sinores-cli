@@ -154,6 +154,7 @@ function spawnCollect(
   return new Promise((resolve) => {
     const proc = spawn(cmd, args, { cwd: opts.cwd });
     let out = '';
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     const append = (d: Buffer) => {
       out += d.toString();
@@ -161,13 +162,20 @@ function spawnCollect(
       if (out.length > 100_000) out = out.slice(-100_000);
     };
 
+    const cleanup = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+    };
+
     proc.stdout.on('data', append);
     proc.stderr.on('data', append);
-    proc.on('close',  (code) => resolve(out || `(exited ${code})`));
-    proc.on('error',  (err)  => resolve(`Error: ${err.message}`));
+    proc.on('close',  (code) => { cleanup(); resolve(out || `(exited ${code})`); });
+    proc.on('error',  (err)  => { cleanup(); resolve(`Error: ${err.message}`); });
 
     if (opts.timeout) {
-      setTimeout(() => { proc.kill(); resolve('(timeout)'); }, opts.timeout);
+      timeoutId = setTimeout(() => { proc.kill(); resolve('(timeout)'); }, opts.timeout);
     }
     opts.signal?.addEventListener('abort', () => { proc.kill(); resolve('(cancelled)'); });
   });
@@ -181,7 +189,23 @@ export async function executeTool(
   try {
     switch (name) {
       case 'read_file': {
-        return await fs.readFile(abs(args['path']!), 'utf-8');
+        const full = abs(args['path']!);
+        const MAX_BYTES = 50_000;
+        const stat = await fs.stat(full);
+        if (stat.size > MAX_BYTES) {
+          const fh = await fs.open(full, 'r');
+          try {
+            const buf = Buffer.alloc(MAX_BYTES);
+            await fh.read(buf, 0, MAX_BYTES, 0);
+            return (
+              buf.toString('utf-8') +
+              `\n\n[file truncated — ${stat.size.toLocaleString()} bytes total, showing first ${MAX_BYTES.toLocaleString()}]`
+            );
+          } finally {
+            await fh.close();
+          }
+        }
+        return await fs.readFile(full, 'utf-8');
       }
 
       case 'write_file': {

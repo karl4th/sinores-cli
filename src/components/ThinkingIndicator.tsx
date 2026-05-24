@@ -43,7 +43,7 @@ export const ThinkingIndicator = memo(function ThinkingIndicator({
         >
           {isThinking ? (
             <Text color="#6B7280" wrap="wrap">
-              {liveThinkingText.split('\n').slice(-5).join('\n')}
+              {liveThinkingText.split('\n').slice(-20).join('\n')}
               <Text color="#8B5CF6">▌</Text>
             </Text>
           ) : (

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Box, Text, useInput, useStdout } from 'ink';
 import { describeCall, type ToolName } from '../services/tools.js';
 import type { Permission } from '../services/ai.js';
@@ -14,7 +14,6 @@ function sessionLabel(toolName: ToolName): string {
   return `Allow all ${toolName.replace('_', ' ')}s in session`;
 }
 
-// #22 fix: ASCII tags instead of emoji — predictable 1-column width
 const TOOL_TAG: Record<ToolName, string> = {
   read_file:    '[read]',
   write_file:   '[write]',
@@ -25,18 +24,30 @@ const TOOL_TAG: Record<ToolName, string> = {
   search_files: '[grep]',
 };
 
+const OPTIONS: Permission[] = ['once', 'session', 'cancel'];
+
 export function PermissionDialog({ toolName, args, onDecide }: Props) {
   const { stdout } = useStdout();
   const W = (stdout?.columns ?? 80) - 2;
+  const [sel, setSel] = useState(0);
 
   useInput((_ch, key) => {
-    if (_ch === '1') onDecide('once');
-    if (_ch === '2') onDecide('session');
-    if (_ch === '3' || key.escape) onDecide('cancel');
+    if (_ch === '1') { onDecide('once'); return; }
+    if (_ch === '2') { onDecide('session'); return; }
+    if (_ch === '3' || key.escape) { onDecide('cancel'); return; }
+    if (key.leftArrow || key.upArrow) { setSel(s => (s + 2) % 3); return; }
+    if (key.rightArrow || key.downArrow) { setSel(s => (s + 1) % 3); return; }
+    if (key.return) { onDecide(OPTIONS[sel]!); return; }
   });
 
   const tag   = TOOL_TAG[toolName] ?? '[tool]';
   const label = describeCall(toolName, args);
+
+  const opts = [
+    { key: '1', label: 'Allow once',          permission: 'once' as Permission,    color: '#A78BFA' },
+    { key: '2', label: sessionLabel(toolName), permission: 'session' as Permission, color: '#A78BFA' },
+    { key: '3', label: 'Cancel',               permission: 'cancel' as Permission,  color: '#EF4444' },
+  ];
 
   return (
     <Box
@@ -59,18 +70,22 @@ export function PermissionDialog({ toolName, args, onDecide }: Props) {
       </Box>
 
       <Box gap={4} paddingLeft={2} marginTop={1}>
-        <Box gap={1}>
-          <Text color="#A78BFA" bold>[1]</Text>
-          <Text color="#9CA3AF">Allow once</Text>
-        </Box>
-        <Box gap={1}>
-          <Text color="#A78BFA" bold>[2]</Text>
-          <Text color="#9CA3AF">{sessionLabel(toolName)}</Text>
-        </Box>
-        <Box gap={1}>
-          <Text color="#EF4444" bold>[3]</Text>
-          <Text color="#9CA3AF">Cancel</Text>
-        </Box>
+        {opts.map((opt, i) => {
+          const active = sel === i;
+          return (
+            <Box key={opt.key} gap={1}>
+              <Text color={active ? opt.color : '#4B5563'} bold={active}>
+                {active ? '▸' : ' '}{opt.key}
+              </Text>
+              <Text color={active ? '#E5E7EB' : '#6B7280'} bold={active}>
+                {opt.label}
+              </Text>
+            </Box>
+          );
+        })}
+      </Box>
+      <Box paddingLeft={2} marginTop={0}>
+        <Text color="#374151" dimColor>←→ navigate · Enter confirm · 1/2/3 direct</Text>
       </Box>
     </Box>
   );

@@ -120,7 +120,7 @@ You run in a terminal — no markdown renderer exists.
 - Plain text for all explanations
 - \`\`\` code blocks for all code
 - Use - for bullet lists
-- No **bold**, no *italic*, no # headers in prose
+- No **bold**, No *italic*, no # headers in prose
 - Keep responses concise — the terminal is not a blog post
 
 ## What you never do

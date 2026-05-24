@@ -50,6 +50,7 @@ export const MarkdownText = React.memo(function MarkdownText({ content, color = 
         codeLines.push(lines[i]!);
         i++;
       }
+      if (i < lines.length) i++; // skip closing ``` only if found
       blocks.push(
         <Box
           key={i}
@@ -66,7 +67,6 @@ export const MarkdownText = React.memo(function MarkdownText({ content, color = 
           ))}
         </Box>,
       );
-      i++; // skip closing ```
       continue;
     }
 

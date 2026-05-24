@@ -1,7 +1,8 @@
-import React, { memo } from 'react';
+import React, { memo, useState, useEffect } from 'react';
 import { Box, Text, useStdout } from 'ink';
 import os from 'os';
 import { VERSION } from '../version.js';
+import { listSessions } from '../services/session.js';
 
 function getDisplayName() {
   const raw = os.userInfo().username;
@@ -51,6 +52,12 @@ export const WelcomeBanner = memo(function WelcomeBanner() {
   const rightW = inner - leftW - 3;
   const name = getDisplayName();
 
+  const [isReturning, setIsReturning] = useState(false);
+
+  useEffect(() => {
+    listSessions().then(s => setIsReturning(s.length > 0)).catch(() => {});
+  }, []);
+
   const DIVIDER_H = Math.max(
     GEM_CHARS.length + 1,
     RELEASE_NOTES.length + 2,
@@ -71,7 +78,7 @@ export const WelcomeBanner = memo(function WelcomeBanner() {
           <Box gap={2} alignItems="flex-start">
             <GemIcon />
             <Box flexDirection="column">
-              <Text color="#EDE9FE" bold>Welcome back, {name}</Text>
+              <Text color="#EDE9FE" bold>{isReturning ? `Welcome back, ${name}` : `Welcome, ${name}`}</Text>
               <Box gap={1}>
                 <Text color="#8B5CF6" bold>sinores</Text>
                 <Text color="#6B7280">v{VERSION}  ·  {today()}</Text>

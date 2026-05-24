@@ -8,6 +8,7 @@ import {
   loadSession as loadSessionData,
   saveSession as saveSessionData,
   clearCurrentSession as clearCurrentSessionFile,
+  deleteSession,
   type SessionMeta,
 } from './services/session.js';
 import { Splash } from './components/Splash.js';
@@ -19,7 +20,7 @@ import { ToolCallBlock } from './components/ToolCallBlock.js';
 import { InputArea } from './components/InputArea.js';
 import { ResumeSelector } from './components/ResumeSelector.js';
 import { runAgent, type ToolCallState, type Permission, type ChatMsg } from './services/ai.js';
-import { CWD } from './services/tools.js';
+import { CWD, executeTool } from './services/tools.js';
 import type { ToolName } from './services/tools.js';
 import { countTokens } from './services/tokenizer.js';
 
@@ -82,6 +83,11 @@ export function App({ resume = false }: AppProps) {
   const [live, setLive] = useState<LiveState>({ content: '', thinking: '', thinkingChars: 0 });
   const [liveToolCalls, setLiveToolCalls] = useState<ToolCallState[]>([]);
   const [pendingPermission, setPendingPermission] = useState<PendingPermission | null>(null);
+  const pendingPermissionRef = useRef(pendingPermission);
+  pendingPermissionRef.current = pendingPermission;
+  const [roundLimitPending, setRoundLimitPending] = useState(false);
+  const [continueYes, setContinueYes] = useState(true);
+  const roundLimitResolve = useRef<(cont: boolean) => void>();
 
   const fullHistory = useRef<ChatMsg[]>([]);
   const sessionAllowed = useRef(new Set<string>());
@@ -93,6 +99,8 @@ export function App({ resume = false }: AppProps) {
   const flushTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
+  const tokensRef = useRef(tokens);
+  tokensRef.current = tokens;
 
   const flushStreaming = useCallback(() => {
     setLive({
@@ -186,13 +194,55 @@ export function App({ resume = false }: AppProps) {
 
   const stopAgent = useCallback(() => {
     abortRef.current?.abort();
+    if (flushTimer.current) {
+      clearTimeout(flushTimer.current);
+      flushTimer.current = null;
+    }
+    contentBuf.current = '';
+    thinkingBuf.current = '';
     setIsLoading(false);
     setLive({ content: '', thinking: '', thinkingChars: 0 });
     setLiveToolCalls([]);
+    // Cancel any pending permission / round-limit so the agent loop can exit
+    pendingPermissionRef.current?.resolve('cancel');
+    setPendingPermission(null);
+    if (roundLimitResolve.current) {
+      setRoundLimitPending(false);
+      roundLimitResolve.current(false);
+      roundLimitResolve.current = undefined;
+    }
     addSystem('Agent stopped.');
   }, [addSystem]);
 
   useInput((_ch, key) => {
+    if (roundLimitPending) {
+      if (key.leftArrow || key.rightArrow) {
+        setContinueYes(y => !y);
+        return;
+      }
+      if (key.return) {
+        setRoundLimitPending(false);
+        roundLimitResolve.current?.(continueYes);
+        return;
+      }
+      if (key.escape) {
+        setRoundLimitPending(false);
+        roundLimitResolve.current?.(false);
+        return;
+      }
+      return;
+    }
+
+    if (pendingPermission) {
+      // Let PermissionDialog handle its own keys; block Tab and Ctrl+C only
+      if (key.tab) return;
+      if (key.ctrl && _ch === 'c') {
+        stopAgent();
+        return;
+      }
+      return;
+    }
+
     if (isLoading && (key.escape || (key.ctrl && _ch === 'c'))) {
       stopAgent();
       return;
@@ -269,7 +319,7 @@ export function App({ resume = false }: AppProps) {
 
   const clearPendingRef = useRef(false);
 
-  const handleSubmit = useCallback((raw: string) => {
+  const handleSubmit = useCallback(async (raw: string) => {
     if (!raw.trim()) return;
 
     if (raw === '/clear') {
@@ -277,8 +327,10 @@ export function App({ resume = false }: AppProps) {
         setMessages([]); setTokens(0); setHasChat(false);
         fullHistory.current = [];
         clearPendingRef.current = false;
+        const oldId = sessionMeta.current?.id;
         clearCurrentSessionFile();
-        if (sessionMeta.current) saveCurrentSession([], [], 0);
+        if (oldId) deleteSession(oldId);
+        startNewSession();
       } else {
         clearPendingRef.current = true;
         addSystem('Type /clear again to confirm resetting the conversation.');
@@ -295,6 +347,24 @@ export function App({ resume = false }: AppProps) {
     }
 
     let value = raw;
+
+    // Expand @filepath mentions into inline file content
+    const atMatches = [...raw.matchAll(/@(\S+)/g)];
+    if (atMatches.length > 0) {
+      let expanded = raw;
+      for (const m of atMatches) {
+        const filepath = m[1]!;
+        const content = await executeTool('read_file', { path: filepath });
+        if (!content.startsWith('Error:')) {
+          expanded = expanded.replace(
+            m[0]!,
+            `@${filepath}\n\`\`\`\n${content}\n\`\`\``,
+          );
+        }
+      }
+      value = expanded;
+    }
+
     if (raw === '/init') {
       value = [
         'Initialize sinores for this project.',
@@ -357,25 +427,53 @@ export function App({ resume = false }: AppProps) {
           timestamp: ts(),
         };
 
-        setMessages(prev => {
-          const next = [...prev, newMsg];
-          setTokens(tok => {
-            const t = tok + countTokens(finalContent) + countTokens(finalThinking);
-            saveCurrentSession(next, updatedHistory, t);
-            return t;
-          });
-          return next;
-        });
+        const nextMessages = [...messagesRef.current, newMsg];
+        const newTokens = tokensRef.current + countTokens(finalContent) + countTokens(finalThinking);
 
+        setMessages(nextMessages);
+        setTokens(newTokens);
         setIsLoading(false);
         setLive({ content: '', thinking: '', thinkingChars: 0 });
         setLiveToolCalls([]);
+        saveCurrentSession(nextMessages, updatedHistory, newTokens);
       },
       onError: (err) => {
+        if (flushTimer.current) {
+          clearTimeout(flushTimer.current);
+          flushTimer.current = null;
+        }
+        const finalContent = contentBuf.current;
+        const finalThinking = thinkingBuf.current;
+        contentBuf.current = '';
+        thinkingBuf.current = '';
+
+        if (finalContent) {
+          const partialMsg: Message = {
+            role: 'assistant',
+            content: finalContent,
+            thinkingTokens: finalThinking.length,
+            timestamp: ts(),
+          };
+          const nextMessages = [...messagesRef.current, partialMsg];
+          const newTokens = tokensRef.current + countTokens(finalContent) + countTokens(finalThinking);
+          setMessages(nextMessages);
+          setTokens(newTokens);
+          saveCurrentSession(nextMessages, fullHistory.current, newTokens);
+        } else {
+          saveCurrentSession(messagesRef.current, fullHistory.current, tokensRef.current);
+        }
+
         addSystem(`Error: ${err.message}`);
         setIsLoading(false);
         setLive({ content: '', thinking: '', thinkingChars: 0 });
         setLiveToolCalls([]);
+      },
+      onRoundLimit: async () => {
+        return new Promise(resolve => {
+          setContinueYes(true);
+          setRoundLimitPending(true);
+          roundLimitResolve.current = resolve;
+        });
       },
       requestPermission,
     }, ac.signal);
@@ -422,6 +520,22 @@ export function App({ resume = false }: AppProps) {
           args={pendingPermission.args}
           onDecide={pendingPermission.resolve}
         />
+      ) : roundLimitPending ? (
+        <Box flexDirection="column">
+          <Box flexDirection="column" paddingLeft={3} marginBottom={1}>
+            <Text color="#F59E0B" bold>◆  Agent reached round limit. Continue?</Text>
+            <Box gap={3} paddingLeft={2}>
+              <Text color={continueYes ? '#10B981' : '#6B7280'} bold={continueYes}>{continueYes ? '▸ Yes' : '  Yes'}</Text>
+              <Text color={!continueYes ? '#EF4444' : '#6B7280'} bold={!continueYes}>{!continueYes ? '▸ No' : '  No'}</Text>
+            </Box>
+          </Box>
+          <StatusLine
+            model="kimi-k2.6"
+            mode={mode}
+            tokens={tokens}
+            contextPct={ctxPct}
+          />
+        </Box>
       ) : (
         <>
           <InputArea

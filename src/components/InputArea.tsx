@@ -49,7 +49,10 @@ async function scanFiles(dir: string, depth = 0, maxDepth = 2): Promise<string[]
 function extractAtQuery(value: string): { before: string; query: string } | null {
   const match = value.match(/@([^\s]*)$/);
   if (!match) return null;
-  return { before: value.slice(0, -match[0].length), query: match[1] ?? '' };
+  const idx = match.index!;
+  // Only trigger when @ is at the start or preceded by whitespace (not inside email addresses)
+  if (idx > 0 && !/\s/.test(value[idx - 1]!)) return null;
+  return { before: value.slice(0, idx), query: match[1] ?? '' };
 }
 
 export const InputArea = memo(function InputArea({ onSubmit, isLoading = false, exitPending = false }: InputAreaProps) {
@@ -101,7 +104,7 @@ export const InputArea = memo(function InputArea({ onSubmit, isLoading = false, 
 
     if (key.escape) {
       if (filePickerOpen) {
-        setValue(atQuery.before + atQuery.query);
+        setValue(atQuery.before + '@' + atQuery.query);
       }
       return;
     }
@@ -122,8 +125,8 @@ export const InputArea = memo(function InputArea({ onSubmit, isLoading = false, 
     }
 
     if (key.tab) {
-      if (!value) {
-        insertValue('/');
+      if (!value || cmdHints.length === 0) {
+        setHintIdx(h => (h + 1) % HINTS.length);
       } else if (cmdHints.length > 0) {
         insertValue(cmdHints[0]!);
       } else {
@@ -180,7 +183,7 @@ export const InputArea = memo(function InputArea({ onSubmit, isLoading = false, 
     <Box flexDirection="column">
       {filePickerOpen && (
         <Box flexDirection="column" paddingLeft={3} paddingBottom={0}>
-          <Text color="#6B7280">files: {filteredFiles.length === 0 ? 'scanning…' : ''}</Text>
+          <Text color="#6B7280">files: {files.length === 0 ? 'scanning…' : filteredFiles.length === 0 ? 'no matches' : ''}</Text>
           <Box flexDirection="column">
             {filteredFiles.slice(0, 6).map((f, i) => (
               <Text key={f} color={i === fileIndex ? '#C4B5FD' : '#6B7280'} bold={i === fileIndex}>
