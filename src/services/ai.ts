@@ -1,11 +1,11 @@
 import OpenAI from 'openai';
-import 'dotenv/config';
 import { TOOL_DEFINITIONS, executeTool, permissionKey, type ToolName } from './tools.js';
 import { SYSTEM_PROMPT, COMPACT_SUMMARY_PROMPT } from './prompt.js';
 import { logDecision } from './project-state.js';
+import { getMoonshotApiKey } from './config.js';
 
 const client = new OpenAI({
-  apiKey:   process.env.MOONSHOT_API_KEY ?? 'missing',
+  apiKey:   getMoonshotApiKey() ?? 'missing',
   baseURL:  'https://api.moonshot.ai/v1',
 });
 
@@ -171,8 +171,8 @@ export async function generatePlan(
   callbacks: Pick<AgentCallbacks, 'onThinkingChunk' | 'onContentChunk'>,
   signal:    AbortSignal,
 ): Promise<void> {
-  if (!process.env.MOONSHOT_API_KEY) {
-    throw new Error('MOONSHOT_API_KEY not set — create a .env file with your Moonshot API key');
+  if (!getMoonshotApiKey()) {
+    throw new Error('MOONSHOT_API_KEY not set — run: sinores --init-config or set MOONSHOT_API_KEY env var');
   }
 
   const parts: string[] = [];
@@ -218,8 +218,8 @@ export async function generatePlan(
 }
 
 export async function compactMessages(history: ChatMsg[]): Promise<string> {
-  if (!process.env.MOONSHOT_API_KEY) {
-    throw new Error('MOONSHOT_API_KEY not set — create a .env file with your Moonshot API key');
+  if (!getMoonshotApiKey()) {
+    throw new Error('MOONSHOT_API_KEY not set — run: sinores --init-config or set MOONSHOT_API_KEY env var');
   }
 
   const lines: string[] = [];
@@ -279,8 +279,8 @@ export async function runAgent(
   sessionId?:     string,
 ): Promise<void> {
   // #29 fix: clear env check before first API call
-  if (!process.env.MOONSHOT_API_KEY) {
-    callbacks.onError(new Error('MOONSHOT_API_KEY not set — create a .env file with your Moonshot API key'));
+  if (!getMoonshotApiKey()) {
+    callbacks.onError(new Error('MOONSHOT_API_KEY not set — run: sinores --init-config or set MOONSHOT_API_KEY env var'));
     return;
   }
 

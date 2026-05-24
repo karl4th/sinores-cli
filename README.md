@@ -47,23 +47,31 @@ sinores
 
 ## Configuration
 
-Create a `.env` file in the working directory:
+The CLI reads config from `~/.sinores/config.json` (created automatically on first run, or via `--init-config`).
+
+### Quick start
 
 ```bash
-cp .env.example .env
+sinores --init-config
 ```
 
-Set the API key:
+Then edit `~/.sinores/config.json`:
 
-```env
-MOONSHOT_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```json
+{
+  "moonshotApiKey": "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "defaultModel": "kimi-k2.6",
+  "maxRounds": 50
+}
 ```
 
-Environment variables are also supported:
+### Priority
 
-```bash
-export MOONSHOT_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
+1. `MOONSHOT_API_KEY` environment variable
+2. `moonshotApiKey` in `~/.sinores/config.json`
+3. `.env` file in the working directory (backward compat)
+
+This means you can keep the key in `config.json` globally, but override per-project via `.env` or env var.
 
 ## Usage
 
