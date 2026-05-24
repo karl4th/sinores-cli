@@ -5,7 +5,7 @@
 <h1 align="center">sinores-cli</h1>
 
 <p align="center">
-  <strong>Autonomous terminal AI coding agent — read, write, run, ship.</strong>
+  Terminal AI agent for code operations via Moonshot API.
 </p>
 
 <p align="center">
@@ -17,42 +17,31 @@
 
 ---
 
-## News
+## Features
 
-**v0.1.0** — Initial release
+- Terminal-native interface. No browser context switching.
+- File-system operations with explicit permission model keyed by `tool:path`.
+- Persistent sessions stored in `~/.sinores/sessions/`.
+- Session resume and export to Markdown.
+- Auto-truncation of history near context limits.
+- `@<query>` inline file picker for attaching local files as context.
+- Live reasoning and content streaming.
 
-- Agentic file-system access with explicit permission model
-- Live reasoning and content streaming
-- Persistent sessions with auto-save and resume
-- Session export to Markdown
-- @file picker for attaching local files as context
-- Smart history truncation to stay under context limits
+## Requirements
 
----
-
-## Why sinores-cli?
-
-**Browser tabs are friction.** Every time you switch to a web UI to ask AI about your code, you break flow. sinores lives in your terminal — right where you already work.
-
-**No copy-paste.** Ask about a file, the agent reads it. Ask to refactor, it edits in place. Ask to run tests, it executes. All without you leaving the shell.
-
-**Trust, but verify.** Every file write, edit, delete, or shell command triggers a permission prompt. Session-scoped approvals are keyed by `tool:path`, so "allow once" means exactly that — not blanket access to your entire system.
-
-**Pick up where you left off.** Conversations auto-save to `~/.sinores/sessions/`. Resume yesterday's debugging session with `--resume` or `/resume`.
-
-**Stay under limits.** History auto-truncates at a safe boundary so you don't hit context ceilings mid-conversation.
-
----
+- Node.js >= 18
+- ESM (`"type": "module"`)
+- Moonshot API key
 
 ## Installation
 
-### Global (recommended)
+### Global
 
 ```bash
 npm install -g sinores-cli
 ```
 
-Then run from anywhere:
+Then run:
 
 ```bash
 sinores
@@ -68,28 +57,63 @@ npm run build
 npm link
 ```
 
-### Requirements
+## Configuration
 
-- Node.js 18+
-- API key for your configured LLM provider
+Create a `.env` file in the working directory:
 
----
+```bash
+cp .env.example .env
+```
 
-## Commands & Shortcuts
+Set the API key:
+
+```env
+API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+Environment variables are also supported:
+
+```bash
+export API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+## Usage
+
+Start a new session:
+
+```bash
+sinores
+```
+
+Resume a previous session:
+
+```bash
+sinores --resume
+```
+
+## Sessions
+
+Conversations are auto-saved to `~/.sinores/sessions/`. Use `--resume` on startup or `/resume` in the prompt to restore a previous session. Use `/new` to discard the current session and start a new one. Use `/export` to write the current session to a Markdown file in the current working directory.
+
+History is truncated automatically when approaching the model's context limit.
+
+## Permission Model
+
+Every file write, edit, delete, or shell command requires explicit approval. Approvals are scoped to the current session and keyed by `tool:path`. An approval granted for one operation does not extend to other paths or subsequent sessions.
+
+## Commands
 
 ### Slash Commands
 
-Type at the prompt:
-
 | Command | Action |
 |---------|--------|
+| `/goal <description>` | Set a goal, plan it, then execute step by step |
 | `/init` | Scan project tree and generate `.sinores/SINORES.md` context file |
-| `/help` | Show all available commands |
-| `/model <name>` | Switch the active model |
+| `/help` | Show available commands |
 | `/mode <mode>` | Switch mode: `chat`, `agent`, `code`, `research` |
-| `/export` | Save current session to a Markdown file in CWD |
+| `/export` | Save current session to Markdown in CWD |
 | `/resume` | Browse and restore a previous session |
-| `/new` | Start a brand new session |
+| `/new` | Start a new session |
 | `/clear` | Reset the conversation (requires double confirmation) |
 
 ### Keyboard Shortcuts
@@ -102,58 +126,27 @@ Type at the prompt:
 | `Esc` | Abort a running agent |
 | `@<query>` | Inline file picker for attaching context |
 
----
+### Goal Mode Keys
 
-## Configuration
+When reviewing or executing a goal plan:
 
-Create a `.env` file in your working directory:
+| Key | Action |
+|-----|--------|
+| `Enter` | Approve plan / continue to next step |
+| `E` | Refine plan with LLM |
+| `R` | Regenerate plan |
+| `Esc` | Cancel goal execution |
 
-```bash
-cp .env.example .env
-```
-
-Add your API key:
-
-```env
-API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-The tool reads configuration via `dotenv`, so environment variables work too:
+## Development
 
 ```bash
-export API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-### Usage
-
-```bash
-# Start a new session
-sinores
-
-# Resume a previous session
-sinores --resume
-```
-
-### Development
-
-```bash
-npm run dev              # tsx watch with hot reload
-npm run dev -- --resume  # dev + session picker
-npm run build            # compile TypeScript
+npm run dev              # tsx watch mode
+npm run dev -- --resume  # dev mode with session picker
+npm run build            # compile TypeScript to dist/
 npm start                # run compiled build
-npm start -- --resume    # compiled + session picker
+npm start -- --resume    # compiled build with session picker
+npm test                 # run test suite
 ```
-
----
-
-## Connect with Us
-
-- **Website:** [https://sinores.net](https://sinores.net)
-- **GitHub:** [https://github.com/karl4th/sinores-cli](https://github.com/karl4th/sinores-cli)
-- **Issues & Feature Requests:** [GitHub Issues](https://github.com/karl4th/sinores-cli/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/karl4th/sinores-cli/discussions)
-
----
 
 ## License
 
