@@ -35,8 +35,6 @@
 
 ## Installation
 
-### Global
-
 ```bash
 npm install -g sinores-cli
 ```
@@ -45,16 +43,6 @@ Then run:
 
 ```bash
 sinores
-```
-
-### Local
-
-```bash
-git clone <repo-url>
-cd sinores-cli
-npm install
-npm run build
-npm link
 ```
 
 ## Configuration
