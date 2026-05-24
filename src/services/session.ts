@@ -14,6 +14,7 @@ export interface SessionData {
   messages:    Message[];
   fullHistory: ChatMsg[];
   tokens:      number;
+  projectPath: string;
   createdAt:   string;
   updatedAt:   string;
 }
@@ -26,6 +27,7 @@ export interface SessionMeta {
   messagesCount: number;
   tokens:        number;
   preview:       string;
+  projectPath:   string;
 }
 
 export async function ensureDirs() {
@@ -40,7 +42,7 @@ export function generateSessionId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
-export async function listSessions(): Promise<SessionMeta[]> {
+export async function listSessions(projectPath?: string): Promise<SessionMeta[]> {
   try {
     const files = await readdir(SESSIONS_DIR);
     const sessions: SessionMeta[] = [];
@@ -52,6 +54,8 @@ export async function listSessions(): Promise<SessionMeta[]> {
         const data = JSON.parse(raw) as SessionData;
         // Skip empty sessions — no point restoring a blank chat
         if (data.messages.length === 0) continue;
+        // Filter by project path if provided
+        if (projectPath && data.projectPath !== projectPath) continue;
         const firstUser = data.messages.find(m => m.role === 'user');
         sessions.push({
           id,
@@ -61,6 +65,7 @@ export async function listSessions(): Promise<SessionMeta[]> {
           messagesCount: data.messages.length,
           tokens: data.tokens,
           preview: firstUser?.content.slice(0, 60).replace(/\n/g, ' ') || '',
+          projectPath: data.projectPath || '',
         });
       } catch { /* skip corrupt */ }
     }
@@ -73,7 +78,10 @@ export async function listSessions(): Promise<SessionMeta[]> {
 export async function loadSession(id: string): Promise<SessionData | null> {
   try {
     const raw = await readFile(sessionPath(id), 'utf-8');
-    return JSON.parse(raw) as SessionData;
+    const data = JSON.parse(raw) as SessionData;
+    // migration: old sessions without projectPath
+    if (!data.projectPath) data.projectPath = process.cwd();
+    return data;
   } catch {
     return null;
   }

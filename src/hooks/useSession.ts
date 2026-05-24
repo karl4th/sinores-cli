@@ -8,6 +8,7 @@ import {
   deleteSession,
   type SessionMeta,
 } from '../services/session.js';
+import { CWD } from '../services/tools.js';
 import type { Message } from '../components/MessageBubble.js';
 import type { ChatMsg } from '../services/ai.js';
 
@@ -23,9 +24,9 @@ export function useSession(addSystem: (content: string) => void) {
   }, []);
 
   const openResumeSelector = useCallback(async () => {
-    const list = await listSessions();
+    const list = await listSessions(CWD);
     if (list.length === 0) {
-      addSystem('No saved sessions found. Starting fresh.');
+      addSystem('No saved sessions found for this project. Starting fresh.');
       startNewSession();
       return false;
     }
@@ -50,6 +51,7 @@ export function useSession(addSystem: (content: string) => void) {
       messages: msgs,
       fullHistory: hist,
       tokens: tok,
+      projectPath: CWD,
       createdAt: sessionMeta.current.createdAt,
       updatedAt: new Date().toISOString(),
     });

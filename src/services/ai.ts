@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import 'dotenv/config';
 import { TOOL_DEFINITIONS, executeTool, permissionKey, type ToolName } from './tools.js';
 import { SYSTEM_PROMPT, COMPACT_SUMMARY_PROMPT } from './prompt.js';
+import { logDecision } from './project-state.js';
 
 const client = new OpenAI({
   apiKey:   process.env.MOONSHOT_API_KEY ?? 'missing',
@@ -275,6 +276,7 @@ export async function runAgent(
   sessionAllowed: Set<string>,
   callbacks:      AgentCallbacks,
   signal:         AbortSignal,       // #5 fix: caller controls cancellation
+  sessionId?:     string,
 ): Promise<void> {
   // #29 fix: clear env check before first API call
   if (!process.env.MOONSHOT_API_KEY) {
@@ -385,6 +387,9 @@ export async function runAgent(
         }
 
         callbacks.onToolCallDone(tc.id, result, finalStatus);
+        if (sessionId) {
+          logDecision(sessionId, name, args, result);
+        }
         messages.push({ role: 'tool', tool_call_id: tc.id, content: result });
       }
     }

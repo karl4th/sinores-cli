@@ -73,7 +73,7 @@ export function App({ resume = false }: AppProps) {
   // ── step runner for goal execution ──────────────────────────────────────────
 
   const runStep = useCallback(async (prompt: string): Promise<string> => {
-    const result = await agent.runMessage(prompt, messagesRef.current, tokensRef.current);
+    const result = await agent.runMessage(session.sessionMeta.current?.id ?? null, prompt, messagesRef.current, tokensRef.current);
     setMessages(result.messages);
     setTokens(result.tokens);
     const lastMsg = result.messages[result.messages.length - 1];
@@ -248,7 +248,7 @@ export function App({ resume = false }: AppProps) {
     setHasChat(true);
     setTokens(t => t + countTokens(value));
 
-    const result = await agent.runMessage(value, [...messages, userMsg], tokens + countTokens(value));
+    const result = await agent.runMessage(session.sessionMeta.current?.id ?? null, value, [...messages, userMsg], tokens + countTokens(value));
     setMessages(result.messages);
     setTokens(result.tokens);
   }, [addSystem, runCommand, session, agent, goal, messages, tokens]);

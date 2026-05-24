@@ -95,6 +95,7 @@ export function useAgent(
   );
 
   const runMessage = useCallback(async (
+    sessionId: string | null,
     value: string,
     currentMessages: Message[],
     currentTokens: number,
@@ -202,7 +203,7 @@ export function useAgent(
           });
         },
         requestPermission,
-      }, ac.signal);
+      }, ac.signal, sessionId ?? undefined);
     });
   }, [addSystem, saveSession, scheduleFlush, requestPermission]);
 
