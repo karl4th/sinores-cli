@@ -10,6 +10,34 @@ const client = new OpenAI({
 
 const MAX_ROUNDS = 50;
 
+const PLANNER_PROMPT = `You are a meticulous planning assistant embedded in a coding agent called sinores.
+
+Your job is to analyze a user's goal and produce a detailed, step-by-step execution plan.
+
+Rules:
+1. Carefully analyze WHAT the user wants and WHY.
+2. If project context is provided, use it to understand the codebase structure.
+3. Think about edge cases, dependencies, and potential pitfalls.
+4. Each step must be concrete, actionable, and executable by a coding agent.
+5. If a refinement instruction is provided, improve the previous plan accordingly.
+6. Choose the CORRECT approach, not the quickest or easiest.
+7. Do NOT write code — only produce the plan.
+
+IMPORTANT: Format your response EXACTLY as follows (use these exact section headers):
+
+## Analysis
+[Brief analysis of what needs to be done and key considerations]
+
+## Steps
+1. [First concrete action]
+2. [Second concrete action]
+3. [Continue as needed...]
+
+## Expected Outcome
+[What will be achieved when all steps are complete]
+
+The ## Steps section must contain numbered steps, one per line. These steps will be executed one at a time by the agent.`;
+
 export type Permission = 'once' | 'session' | 'cancel';
 
 export interface ToolCallState {
@@ -128,6 +156,64 @@ function truncateHistory(history: ChatMsg[], maxMessages = 60): ChatMsg[] {
   }
   // No user boundary found — hard-slice to keep the most recent messages
   return history.slice(history.length - maxMessages);
+}
+
+export interface PlanRefinement {
+  instruction: string;
+  previousPlan: string;
+}
+
+export async function generatePlan(
+  task:      string,
+  context:   string,
+  refinement: PlanRefinement | null,
+  callbacks: Pick<AgentCallbacks, 'onThinkingChunk' | 'onContentChunk'>,
+  signal:    AbortSignal,
+): Promise<void> {
+  if (!process.env.MOONSHOT_API_KEY) {
+    throw new Error('MOONSHOT_API_KEY not set — create a .env file with your Moonshot API key');
+  }
+
+  const parts: string[] = [];
+  if (context) parts.push(`Project context:\n${context}`);
+  parts.push(`Goal: ${task}`);
+  if (refinement) {
+    parts.push(`Previous plan:\n${refinement.previousPlan}`);
+    parts.push(`Refinement instruction: "${refinement.instruction}"\n\nPlease produce an improved plan that incorporates this refinement.`);
+  }
+  const userMsg = parts.join('\n\n');
+
+  const messages = [
+    { role: 'system' as const, content: PLANNER_PROMPT },
+    { role: 'user' as const, content: userMsg },
+  ];
+
+  const kimiParams: any = {
+    model:       'kimi-k2.6',
+    messages,
+    temperature: 1,
+    max_tokens:  16384,
+    top_p:       0.95,
+    thinking:    { type: 'enabled' },
+    stream:      true,
+  };
+
+  const stream = await client.chat.completions.create(kimiParams) as unknown as AsyncIterable<any>;
+
+  for await (const chunk of stream) {
+    if (signal.aborted) return;
+
+    const choice = chunk.choices[0];
+    if (!choice) continue;
+
+    const delta = choice.delta as {
+      content?:           string;
+      reasoning_content?: string;
+    };
+
+    if (delta.reasoning_content) callbacks.onThinkingChunk(delta.reasoning_content);
+    if (delta.content)           callbacks.onContentChunk(delta.content);
+  }
 }
 
 export async function runAgent(

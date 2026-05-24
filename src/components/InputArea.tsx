@@ -9,9 +9,10 @@ interface InputAreaProps {
   onSubmit: (value: string) => void;
   isLoading?: boolean;
   exitPending?: boolean;
+  initialValue?: string;
 }
 
-const COMMANDS = ['/help', '/init', '/model', '/mode', '/export', '/resume', '/new', '/clear'];
+const COMMANDS = ['/help', '/goal', '/init', '/model', '/mode', '/export', '/resume', '/new', '/clear'];
 
 const HINTS = [
   '↑↓ history   Tab autocomplete   Ctrl+C exit   @file context',
@@ -55,11 +56,19 @@ function extractAtQuery(value: string): { before: string; query: string } | null
   return { before: value.slice(0, idx), query: match[1] ?? '' };
 }
 
-export const InputArea = memo(function InputArea({ onSubmit, isLoading = false, exitPending = false }: InputAreaProps) {
+export const InputArea = memo(function InputArea({ onSubmit, isLoading = false, exitPending = false, initialValue }: InputAreaProps) {
   const { stdout } = useStdout();
   const W = (stdout?.columns ?? 80) - 2;
 
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState(initialValue ?? '');
+  const initialValueRef = useRef(initialValue);
+
+  useEffect(() => {
+    if (initialValue !== undefined && initialValue !== initialValueRef.current) {
+      initialValueRef.current = initialValue;
+      setValue(initialValue);
+    }
+  }, [initialValue]);
   const [history, setHistory] = useState<string[]>([]);
   const [histIdx, setHistIdx] = useState(-1);
   const [saved, setSaved] = useState('');
