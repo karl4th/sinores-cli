@@ -21,7 +21,7 @@ import { executeTool } from './services/tools.js';
 import { countTokens } from './services/tokenizer.js';
 import { CWD } from './services/tools.js';
 import { compactMessages } from './services/ai.js';
-import { SYSTEM_PROMPT } from './services/prompt.js';
+import { buildSystemPrompt } from './services/prompt.js';
 
 const ts = () => new Date().toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' });
 const MemoWelcomeBanner = memo(WelcomeBanner);
@@ -173,7 +173,7 @@ export function App({ resume = false }: AppProps) {
           { role: 'user', content: summary, timestamp: ts() },
         ] as Message[];
         setMessages(newMessages);
-        const newTokens = countTokens(SYSTEM_PROMPT) + countTokens(summary);
+        const newTokens = countTokens(buildSystemPrompt()) + countTokens(summary);
         setTokens(newTokens);
         await session.saveCurrentSession(newMessages, agent.fullHistory.current, newTokens);
         addSystem('Context compacted successfully.');

@@ -1,8 +1,9 @@
 #!/usr/bin/env node
-import React from 'react';
+import React, { useState } from 'react';
 import { render } from 'ink';
 import { App } from './App.js';
-import { getMoonshotApiKey, initConfig, configExists } from './services/config.js';
+import { SetupScreen } from './components/SetupScreen.js';
+import { getMoonshotApiKey, initConfig } from './services/config.js';
 
 const resume = process.argv.includes('--resume');
 const initConfigFlag = process.argv.includes('--init-config');
@@ -14,14 +15,18 @@ if (initConfigFlag) {
   process.exit(0);
 }
 
-if (!getMoonshotApiKey()) {
-  console.error('MOONSHOT_API_KEY not found.');
-  if (!configExists()) {
-    console.error('Run: sinores --init-config');
-  } else {
-    console.error('Add your API key to ~/.sinores/config.json or set MOONSHOT_API_KEY env var.');
+function Root() {
+  const [ready, setReady] = useState(() => !!getMoonshotApiKey());
+
+  if (!ready) {
+    return (
+      <SetupScreen
+        onComplete={() => setReady(true)}
+      />
+    );
   }
-  process.exit(1);
+
+  return <App resume={resume} />;
 }
 
-render(<App resume={resume} />, { exitOnCtrlC: false });
+render(<Root />, { exitOnCtrlC: false });

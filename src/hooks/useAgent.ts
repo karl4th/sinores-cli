@@ -67,8 +67,6 @@ export function useAgent(
       clearTimeout(flushTimer.current);
       flushTimer.current = null;
     }
-    contentBuf.current = '';
-    thinkingBuf.current = '';
     setIsLoading(false);
     setLive({ content: '', thinking: '', thinkingChars: 0 });
     setLiveToolCalls([]);
@@ -79,7 +77,6 @@ export function useAgent(
       roundLimitResolve.current(false);
       roundLimitResolve.current = undefined;
     }
-    addSystem('Agent stopped.');
   }, [addSystem]);
 
   const requestPermission = useCallback(
@@ -141,7 +138,7 @@ export function useAgent(
 
           const newMsg: Message = {
             role: 'assistant',
-            content: finalContent || '(no response)',
+            content: finalContent || '',
             thinkingTokens: thinkingChars,
             timestamp: ts(),
           };
@@ -184,12 +181,12 @@ export function useAgent(
             };
             nextMessages = [...currentMessages, partialMsg];
             newTokens = currentTokens + countTokens(finalContent) + countTokens(finalThinking);
-            saveSession(nextMessages, fullHistory.current, newTokens).catch(() => {});
-          } else {
-            saveSession(currentMessages, fullHistory.current, currentTokens).catch(() => {});
           }
 
-          addSystem(`Error: ${err.message}`);
+          const errMsg: Message = { role: 'system', content: `Error: ${err.message}`, timestamp: ts() };
+          nextMessages = [...nextMessages, errMsg];
+          saveSession(nextMessages, fullHistory.current, newTokens).catch(() => {});
+
           setIsLoading(false);
           setLive({ content: '', thinking: '', thinkingChars: 0 });
           setLiveToolCalls([]);

@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { TOOL_DEFINITIONS, executeTool, permissionKey, type ToolName } from './tools.js';
-import { SYSTEM_PROMPT, COMPACT_SUMMARY_PROMPT } from './prompt.js';
+import { buildSystemPrompt, COMPACT_SUMMARY_PROMPT } from './prompt.js';
+import { loadMemory } from './memory.js';
 import { logDecision } from './project-state.js';
 import { getMoonshotApiKey } from './config.js';
 
@@ -93,7 +94,7 @@ async function oneRound(
     temperature: 1,
     max_tokens:  32768,
     top_p:       0.95,
-    thinking:    { type: 'enabled' },
+    thinking:    { type: 'enabled', budget_tokens: 8000 },
     stream:      true,
   };
   const stream = await client.chat.completions.create(kimiParams) as unknown as AsyncIterable<any>;
@@ -109,6 +110,7 @@ async function oneRound(
     const delta = choice.delta as {
       content?:           string;
       reasoning_content?: string;
+      thinking_content?:  string;
       tool_calls?:        Array<{
         index:     number;
         id?:       string;
@@ -116,9 +118,10 @@ async function oneRound(
       }>;
     };
 
-    if (delta.reasoning_content) {
-      thinkingText += delta.reasoning_content;
-      callbacks.onThinkingChunk(delta.reasoning_content);
+    const thinkingChunk = delta.reasoning_content ?? delta.thinking_content;
+    if (thinkingChunk) {
+      thinkingText += thinkingChunk;
+      callbacks.onThinkingChunk(thinkingChunk);
     }
     if (delta.content) {
       content += delta.content;
@@ -195,7 +198,7 @@ export async function generatePlan(
     temperature: 1,
     max_tokens:  16384,
     top_p:       0.95,
-    thinking:    { type: 'enabled' },
+    thinking:    { type: 'enabled', budget_tokens: 4000 },
     stream:      true,
   };
 
@@ -210,10 +213,12 @@ export async function generatePlan(
     const delta = choice.delta as {
       content?:           string;
       reasoning_content?: string;
+      thinking_content?:  string;
     };
 
-    if (delta.reasoning_content) callbacks.onThinkingChunk(delta.reasoning_content);
-    if (delta.content)           callbacks.onContentChunk(delta.content);
+    const thinkingChunk = delta.reasoning_content ?? delta.thinking_content;
+    if (thinkingChunk) callbacks.onThinkingChunk(thinkingChunk);
+    if (delta.content) callbacks.onContentChunk(delta.content);
   }
 }
 
@@ -241,7 +246,7 @@ export async function compactMessages(history: ChatMsg[]): Promise<string> {
       if (anyMsg.reasoning_content) {
         lines.push(`Thinking: ${anyMsg.reasoning_content}`);
       }
-      if (msg.content && msg.content !== '(no response)') {
+      if (msg.content) {
         lines.push(`Assistant: ${msg.content}`);
       }
       continue;
@@ -284,29 +289,32 @@ export async function runAgent(
     return;
   }
 
+  const memory = loadMemory();
   const messages: ChatMsg[] = [
-    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: buildSystemPrompt(memory) },
     ...truncateHistory(history),
   ];
 
   let totalThinkingChars = 0;
-  let rounds = 0;                    // #12 fix: round counter
+  let rounds = 0;
+  let finished = false;
+
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    callbacks.onDone(totalThinkingChars, messages.slice(1));
+  };
 
   try {
     while (true) {
-      // #5 fix: check abort before each round
-      if (signal.aborted) return;
+      if (signal.aborted) { finish(); return; }
 
-      // #12 fix: hard cap on tool-call rounds
       if (++rounds > MAX_ROUNDS) {
         if (callbacks.onRoundLimit) {
           const shouldContinue = await callbacks.onRoundLimit(messages.slice(1));
-          if (shouldContinue) {
-            rounds = 0;
-            continue;
-          }
+          if (shouldContinue) { rounds = 0; continue; }
         }
-        callbacks.onDone(totalThinkingChars, messages.slice(1));
+        finish();
         return;
       }
 
@@ -318,15 +326,14 @@ export async function runAgent(
         onContentChunk: callbacks.onContentChunk,
       });
 
-      if (signal.aborted) return;
+      if (signal.aborted) { finish(); return; }
 
       // Push assistant turn
       const assistantMsg: Record<string, unknown> = {
         role:    'assistant',
-        content: round.content || '(no response)',
+        content: round.content || '',
       };
       if (round.thinkingText) {
-        // Kimi requires reasoning_content alongside tool_calls
         assistantMsg['reasoning_content'] = round.thinkingText;
       }
       if (round.toolCalls.length > 0) {
@@ -340,13 +347,14 @@ export async function runAgent(
 
       // Done — no more tool calls
       if (round.finishReason !== 'tool_calls' || round.toolCalls.length === 0) {
-        callbacks.onDone(totalThinkingChars, messages.slice(1));
+        finish();
         return;
       }
 
       // Execute tool calls
+      let userCancelled = false;
       for (const tc of round.toolCalls) {
-        if (signal.aborted) break;
+        if (signal.aborted || userCancelled) break;
 
         const name = tc.name as ToolName;
         let   args: Record<string, string> = {};
@@ -355,8 +363,6 @@ export async function runAgent(
         const pKey = permissionKey(name, args);
         let   permission: Permission = 'once';
 
-        // For session checks: run_command is matched by exact command,
-        // file ops are matched by tool name only — one allow covers all files.
         const sessionKey = name === 'run_command' ? pKey : name;
 
         if (!sessionAllowed.has(sessionKey) && !sessionAllowed.has(pKey)) {
@@ -374,8 +380,9 @@ export async function runAgent(
         let finalStatus: 'done' | 'cancelled' | 'error' = 'done';
 
         if (permission === 'cancel') {
-          result      = 'User cancelled this operation.';
-          finalStatus = 'cancelled';
+          result        = 'User cancelled this operation.';
+          finalStatus   = 'cancelled';
+          userCancelled = true;
         } else {
           try {
             result = await executeTool(name, args, signal);
@@ -387,14 +394,17 @@ export async function runAgent(
         }
 
         callbacks.onToolCallDone(tc.id, result, finalStatus);
-        if (sessionId) {
-          logDecision(sessionId, name, args, result);
-        }
+        if (sessionId) logDecision(sessionId, name, args, result);
         messages.push({ role: 'tool', tool_call_id: tc.id, content: result });
       }
+
+      // Stop the loop if user cancelled a tool — don't let the agent retry
+      if (userCancelled || signal.aborted) { finish(); return; }
     }
   } catch (err) {
-    if (!signal.aborted) {
+    if (signal.aborted) {
+      finish();
+    } else {
       callbacks.onError(err instanceof Error ? err : new Error(String(err)));
     }
   }
