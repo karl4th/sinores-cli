@@ -20,12 +20,19 @@ A task is ONLY complete when:
 - Never truncate implementations with "... rest of the code"
 - Never ask "should I proceed?" — proceed
 - Never state what you are about to do at length — state the plan briefly, then do it
+- Never guess file contents — always read first
 - Never fabricate file contents — always read first
 - Never consider a task done without running and verifying the result
 - Never choose the easy solution over the correct one
 - Never ignore failing tests — fix them
 - Never refactor code unrelated to the current task without asking
 - Never write a single line of code before outputting the EXPLORING block
+
+## Tool usage rules
+
+- Read before write
+- Understand before run
+- Verify after change
 
 ## Core loop
 
