@@ -5,6 +5,7 @@ import { MarkdownText } from './MarkdownText.js';
 export interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
+  thinking?: string;
   thinkingTokens?: number;
   timestamp?: string;
 }
@@ -31,6 +32,18 @@ export const MessageBubble = React.memo(function MessageBubble({ message }: { me
           <Text color="#4C1D95" dimColor>· {message.thinkingTokens!.toLocaleString()} chars</Text>
         )}
       </Box>
+
+      {/* thinking */}
+      {!isUser && message.thinking && (
+        <Box flexDirection="row" marginBottom={1}>
+          <Box paddingRight={1} flexShrink={0}>
+            <Text color="#374151">│</Text>
+          </Box>
+          <Box flexDirection="column" flexGrow={1} borderStyle="round" borderColor="#374151" paddingX={1} paddingY={0}>
+            <Text color="#6B7280" italic wrap="wrap">{message.thinking}</Text>
+          </Box>
+        </Box>
+      )}
 
       {/* content with left stripe */}
       <Box flexDirection="row">

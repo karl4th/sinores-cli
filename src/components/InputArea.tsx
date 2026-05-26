@@ -18,6 +18,8 @@ const COMMANDS: Array<{ name: string; desc: string }> = [
   { name: '/compact', desc: 'Compact conversation history to save context space' },
   { name: '/init', desc: 'Scan project and create .sinores/SINORES.md' },
   { name: '/mode', desc: 'Switch mode (chat, agent, code, research)' },
+  { name: '/model', desc: 'Select AI provider and model' },
+  { name: '/settings', desc: 'Edit config (API keys, provider, model, etc.)' },
   { name: '/export', desc: 'Save session to Markdown file' },
   { name: '/resume', desc: 'Restore previous session from disk' },
   { name: '/new', desc: 'Start a new session' },

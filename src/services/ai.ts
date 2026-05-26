@@ -3,14 +3,41 @@ import { TOOL_DEFINITIONS, executeTool, permissionKey, type ToolName } from './t
 import { buildSystemPrompt, COMPACT_SUMMARY_PROMPT } from './prompt.js';
 import { loadMemory } from './memory.js';
 import { logDecision } from './project-state.js';
-import { getMoonshotApiKey } from './config.js';
+import { getApiKey, getBaseURL, getModel, getProvider, getMaxRounds } from './config.js';
 
-const client = new OpenAI({
-  apiKey:   getMoonshotApiKey() ?? 'missing',
-  baseURL:  'https://api.moonshot.ai/v1',
-});
+function createClient(): OpenAI {
+  return new OpenAI({
+    apiKey:  getApiKey() ?? 'missing',
+    baseURL: getBaseURL(),
+  });
+}
 
-const MAX_ROUNDS = 50;
+function getMaxTokens(): number {
+  const provider = getProvider();
+  const model = getModel();
+  if (provider === 'deepseek' && model === 'deepseek-reasoner') return 8192;
+  if (provider === 'deepseek') return 8192;
+  return 32768;
+}
+
+function buildChatParams(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  const provider = getProvider();
+  const params: Record<string, unknown> = {
+    model:       getModel(),
+    temperature: 1,
+    max_tokens:  getMaxTokens(),
+    top_p:       0.95,
+    ...overrides,
+  };
+
+  // Kimi supports explicit thinking budget; DeepSeek does not accept a thinking param
+  if (provider === 'moonshot') {
+    const budget = overrides.max_tokens === 16384 ? 4000 : 8000;
+    params.thinking = { type: 'enabled', budget_tokens: budget };
+  }
+
+  return params;
+}
 
 const PLANNER_PROMPT = `You are a meticulous planning assistant embedded in a coding agent called sinores.
 
@@ -84,20 +111,15 @@ async function oneRound(
   let content      = '';
   let finishReason: string | null = null;
 
-  // Cast to any: Kimi K2.6 adds `thinking` param not in OpenAI SDK types,
-  // and TOOL_DEFINITIONS is readonly while the SDK expects a mutable array.
-  const kimiParams: any = {
-    model:       'kimi-k2.6',
+  const client = createClient();
+  const params = buildChatParams({
     messages,
     tools:       TOOL_DEFINITIONS,
     tool_choice: 'auto',
-    temperature: 1,
-    max_tokens:  32768,
-    top_p:       0.95,
-    thinking:    { type: 'enabled', budget_tokens: 8000 },
     stream:      true,
-  };
-  const stream = await client.chat.completions.create(kimiParams) as unknown as AsyncIterable<any>;
+  });
+
+  const stream = await client.chat.completions.create(params as any) as unknown as AsyncIterable<any>;
 
   for await (const chunk of stream) {
     if (signal.aborted) break;
@@ -167,6 +189,12 @@ export interface PlanRefinement {
   previousPlan: string;
 }
 
+function apiKeyError(): Error {
+  const provider = getProvider();
+  const envName = provider === 'moonshot' ? 'MOONSHOT_API_KEY' : 'DEEPSEEK_API_KEY';
+  return new Error(`${envName} not set — run: sinores --init-config or set the env var`);
+}
+
 export async function generatePlan(
   task:      string,
   context:   string,
@@ -174,8 +202,8 @@ export async function generatePlan(
   callbacks: Pick<AgentCallbacks, 'onThinkingChunk' | 'onContentChunk'>,
   signal:    AbortSignal,
 ): Promise<void> {
-  if (!getMoonshotApiKey()) {
-    throw new Error('MOONSHOT_API_KEY not set — run: sinores --init-config or set MOONSHOT_API_KEY env var');
+  if (!getApiKey()) {
+    throw apiKeyError();
   }
 
   const parts: string[] = [];
@@ -192,17 +220,14 @@ export async function generatePlan(
     { role: 'user' as const, content: userMsg },
   ];
 
-  const kimiParams: any = {
-    model:       'kimi-k2.6',
+  const client = createClient();
+  const params = buildChatParams({
     messages,
-    temperature: 1,
-    max_tokens:  16384,
-    top_p:       0.95,
-    thinking:    { type: 'enabled', budget_tokens: 4000 },
-    stream:      true,
-  };
+    max_tokens: 16384,
+    stream:     true,
+  });
 
-  const stream = await client.chat.completions.create(kimiParams) as unknown as AsyncIterable<any>;
+  const stream = await client.chat.completions.create(params as any) as unknown as AsyncIterable<any>;
 
   for await (const chunk of stream) {
     if (signal.aborted) return;
@@ -223,8 +248,8 @@ export async function generatePlan(
 }
 
 export async function compactMessages(history: ChatMsg[]): Promise<string> {
-  if (!getMoonshotApiKey()) {
-    throw new Error('MOONSHOT_API_KEY not set — run: sinores --init-config or set MOONSHOT_API_KEY env var');
+  if (!getApiKey()) {
+    throw apiKeyError();
   }
 
   const lines: string[] = [];
@@ -257,8 +282,9 @@ export async function compactMessages(history: ChatMsg[]): Promise<string> {
 
   const transcript = lines.join('\n\n');
 
+  const client = createClient();
   const response = await client.chat.completions.create({
-    model: 'kimi-k2.6',
+    model: getModel(),
     messages: [
       { role: 'system', content: COMPACT_SUMMARY_PROMPT },
       { role: 'user', content: transcript },
@@ -280,12 +306,11 @@ export async function runAgent(
   history:        ChatMsg[],
   sessionAllowed: Set<string>,
   callbacks:      AgentCallbacks,
-  signal:         AbortSignal,       // #5 fix: caller controls cancellation
+  signal:         AbortSignal,
   sessionId?:     string,
 ): Promise<void> {
-  // #29 fix: clear env check before first API call
-  if (!getMoonshotApiKey()) {
-    callbacks.onError(new Error('MOONSHOT_API_KEY not set — run: sinores --init-config or set MOONSHOT_API_KEY env var'));
+  if (!getApiKey()) {
+    callbacks.onError(apiKeyError());
     return;
   }
 
@@ -298,6 +323,7 @@ export async function runAgent(
   let totalThinkingChars = 0;
   let rounds = 0;
   let finished = false;
+  const maxRounds = getMaxRounds();
 
   const finish = () => {
     if (finished) return;
@@ -309,7 +335,7 @@ export async function runAgent(
     while (true) {
       if (signal.aborted) { finish(); return; }
 
-      if (++rounds > MAX_ROUNDS) {
+      if (++rounds > maxRounds) {
         if (callbacks.onRoundLimit) {
           const shouldContinue = await callbacks.onRoundLimit(messages.slice(1));
           if (shouldContinue) { rounds = 0; continue; }

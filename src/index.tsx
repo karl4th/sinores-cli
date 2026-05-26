@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { render } from 'ink';
 import { App } from './App.js';
 import { SetupScreen } from './components/SetupScreen.js';
-import { getMoonshotApiKey, initConfig } from './services/config.js';
+import { getApiKey, initConfig } from './services/config.js';
 
 const resume = process.argv.includes('--resume');
 const initConfigFlag = process.argv.includes('--init-config');
@@ -16,7 +16,7 @@ if (initConfigFlag) {
 }
 
 function Root() {
-  const [ready, setReady] = useState(() => !!getMoonshotApiKey());
+  const [ready, setReady] = useState(() => !!getApiKey());
 
   if (!ready) {
     return (

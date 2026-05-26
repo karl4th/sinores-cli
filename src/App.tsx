@@ -10,6 +10,8 @@ import { PermissionDialog } from './components/PermissionDialog.js';
 import { ToolCallBlock } from './components/ToolCallBlock.js';
 import { InputArea } from './components/InputArea.js';
 import { ResumeSelector } from './components/ResumeSelector.js';
+import { ModelSelector } from './components/ModelSelector.js';
+import { SettingsScreen } from './components/SettingsScreen.js';
 import { StatusLine } from './components/StatusLine.js';
 import { RoundLimitDialog } from './components/RoundLimitDialog.js';
 import { GoalPlanView } from './components/GoalPlanView.js';
@@ -22,6 +24,7 @@ import { countTokens } from './services/tokenizer.js';
 import { CWD } from './services/tools.js';
 import { compactMessages } from './services/ai.js';
 import { buildSystemPrompt } from './services/prompt.js';
+import { getModel, getConfig, saveConfig } from './services/config.js';
 
 const ts = () => new Date().toLocaleTimeString('en', { hour: '2-digit', minute: '2-digit' });
 const MemoWelcomeBanner = memo(WelcomeBanner);
@@ -41,6 +44,7 @@ export function App({ resume = false }: AppProps) {
   const [exitPending, setExitPending] = useState(false);
   const [inputSeed, setInputSeed] = useState('');
   const [isCompacting, setIsCompacting] = useState(false);
+  const [activeScreen, setActiveScreen] = useState<'chat' | 'modelSelector' | 'settings'>('chat');
   const clearPendingRef = React.useRef(false);
 
   // Keep latest messages/tokens in refs for use inside async callbacks
@@ -101,26 +105,34 @@ export function App({ resume = false }: AppProps) {
       case '/help':
         addSystem(
           'Commands:\n' +
-          '  /help    — show this message\n' +
-          '  /goal    — set a goal, plan it, then execute step by step\n' +
-          '  /compact — compact conversation history to save context space\n' +
-          '  /init    — scan project and create .sinores/SINORES.md\n' +
-          '  /mode    — switch mode (e.g. /mode agent)\n' +
-          '  /export  — save session to Markdown file\n' +
-          '  /resume  — restore previous session from disk\n' +
-          '  /new     — start a new session\n' +
-          '  /clear   — reset conversation (requires confirmation)\n' +
+          '  /help     — show this message\n' +
+          '  /goal     — set a goal, plan it, then execute step by step\n' +
+          '  /compact  — compact conversation history to save context space\n' +
+          '  /init     — scan project and create .sinores/SINORES.md\n' +
+          '  /mode     — switch mode (e.g. /mode agent)\n' +
+          '  /model    — select AI provider and model\n' +
+          '  /settings — edit config (API keys, provider, model, etc.)\n' +
+          '  /export   — save session to Markdown file\n' +
+          '  /resume   — restore previous session from disk\n' +
+          '  /new      — start a new session\n' +
+          '  /clear    — reset conversation (requires confirmation)\n' +
           '\nGoal mode keys:\n' +
-          '  Enter    — approve plan / continue step\n' +
-          '  E        — refine plan with LLM\n' +
-          '  R        — regenerate plan\n' +
-          '  ESC      — cancel\n' +
+          '  Enter     — approve plan / continue step\n' +
+          '  E         — refine plan with LLM\n' +
+          '  R         — regenerate plan\n' +
+          '  ESC       — cancel\n' +
           '\nKeyboard:\n' +
-          '  ↑↓       — navigate input history\n' +
-          '  Tab      — autocomplete command\n' +
-          '  ESC      — stop running agent\n' +
-          '  Ctrl+C   — exit (press twice)',
+          '  ↑↓        — navigate input history\n' +
+          '  Tab       — autocomplete command\n' +
+          '  ESC       — stop running agent\n' +
+          '  Ctrl+C    — exit (press twice)',
         );
+        return true;
+      case '/model':
+        setActiveScreen('modelSelector');
+        return true;
+      case '/settings':
+        setActiveScreen('settings');
         return true;
       case '/export':
         handleExport();
@@ -377,6 +389,34 @@ export function App({ resume = false }: AppProps) {
     );
   }
 
+  if (activeScreen === 'modelSelector') {
+    return (
+      <ModelSelector
+        currentProvider={getConfig().provider ?? 'moonshot'}
+        currentModel={getModel()}
+        onSelect={(provider, model) => {
+          const cfg = { ...getConfig(), provider, model };
+          saveConfig(cfg);
+          addSystem(`Model set to ${provider} / ${model}`);
+          setActiveScreen('chat');
+        }}
+        onCancel={() => setActiveScreen('chat')}
+      />
+    );
+  }
+
+  if (activeScreen === 'settings') {
+    return (
+      <SettingsScreen
+        onDone={() => {
+          addSystem('Settings saved.');
+          setActiveScreen('chat');
+        }}
+        onCancel={() => setActiveScreen('chat')}
+      />
+    );
+  }
+
   const ctxPct = Math.min(100, Math.round((tokens / 200_000) * 100));
 
   return (
@@ -419,12 +459,12 @@ export function App({ resume = false }: AppProps) {
       ) : agent.roundLimitPending ? (
         <Box flexDirection="column">
           <RoundLimitDialog continueYes={agent.continueYes} />
-          <StatusLine model="kimi-k2.6" mode={mode} tokens={tokens} contextPct={ctxPct} />
+          <StatusLine model={getModel()} mode={mode} tokens={tokens} contextPct={ctxPct} />
         </Box>
       ) : goal.execState ? (
         <Box flexDirection="column">
           <GoalExecutionView execState={goal.execState} />
-          <StatusLine model="kimi-k2.6" mode={mode} tokens={tokens} contextPct={ctxPct} />
+          <StatusLine model={getModel()} mode={mode} tokens={tokens} contextPct={ctxPct} />
         </Box>
       ) : goal.planState ? (
         <Box flexDirection="column">
@@ -432,7 +472,7 @@ export function App({ resume = false }: AppProps) {
             planState={goal.planState}
             onRefinementSubmit={goal.refineGoal}
           />
-          <StatusLine model="kimi-k2.6" mode={mode} tokens={tokens} contextPct={ctxPct} />
+          <StatusLine model={getModel()} mode={mode} tokens={tokens} contextPct={ctxPct} />
         </Box>
       ) : (
         <>
@@ -442,7 +482,7 @@ export function App({ resume = false }: AppProps) {
             exitPending={exitPending}
             initialValue={inputSeed}
           />
-          <StatusLine model="kimi-k2.6" mode={mode} tokens={tokens} contextPct={ctxPct} />
+          <StatusLine model={getModel()} mode={mode} tokens={tokens} contextPct={ctxPct} />
         </>
       )}
     </Box>

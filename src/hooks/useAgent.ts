@@ -68,8 +68,8 @@ export function useAgent(
       flushTimer.current = null;
     }
     setIsLoading(false);
-    setLive({ content: '', thinking: '', thinkingChars: 0 });
-    setLiveToolCalls([]);
+    // Do NOT clear live/liveToolCalls here — let onDone/onError preserve
+    // reasoning text by moving it into the assistant message bubble.
     pendingPermissionRef.current?.resolve('cancel');
     setPendingPermission(null);
     if (roundLimitResolve.current) {
@@ -139,6 +139,7 @@ export function useAgent(
           const newMsg: Message = {
             role: 'assistant',
             content: finalContent || '',
+            thinking: finalThinking || undefined,
             thinkingTokens: thinkingChars,
             timestamp: ts(),
           };
@@ -171,11 +172,15 @@ export function useAgent(
               role: 'assistant',
               content: finalContent,
             };
+            if (finalThinking) {
+              (assistantMsg as any).reasoning_content = finalThinking;
+            }
             fullHistory.current = [...fullHistory.current, assistantMsg];
 
             const partialMsg: Message = {
               role: 'assistant',
               content: finalContent,
+              thinking: finalThinking || undefined,
               thinkingTokens: finalThinking.length,
               timestamp: ts(),
             };
